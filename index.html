@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galeri Foto</title>
+
+<style>
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+  font-family:Arial,sans-serif;
+}
+
+body{
+  background:#f4f4f4;
+  padding:15px;
+}
+
+.topbar{
+  display:flex;
+  gap:10px;
+  margin-bottom:15px;
+}
+
+#search{
+  flex:1;
+  padding:12px;
+  border:1px solid #ccc;
+  border-radius:10px;
+  font-size:16px;
+}
+
+.add-btn{
+  width:50px;
+  border:none;
+  border-radius:10px;
+  background:#2196f3;
+  color:white;
+  font-size:24px;
+  cursor:pointer;
+}
+
+.gallery{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:15px;
+}
+
+.card{
+  background:white;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
+
+.card img{
+  width:100%;
+  height:180px;
+  object-fit:cover;
+  cursor:pointer;
+}
+
+.card-title{
+  padding:10px;
+  font-weight:bold;
+  text-align:center;
+  word-break:break-word;
+}
+
+.delete-btn{
+  width:100%;
+  border:none;
+  padding:10px;
+  background:#e53935;
+  color:white;
+  cursor:pointer;
+}
+
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.6);
+  display:none;
+  justify-content:center;
+  align-items:center;
+  padding:20px;
+}
+
+.modal-box{
+  background:white;
+  width:100%;
+  max-width:400px;
+  border-radius:12px;
+  padding:20px;
+}
+
+.modal-box h2{
+  margin-bottom:15px;
+}
+
+.modal-box input{
+  width:100%;
+  padding:10px;
+  margin-bottom:15px;
+}
+
+.modal-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+}
+
+.modal-actions button{
+  padding:10px 15px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+.cancel{
+  background:#ddd;
+}
+
+.ok{
+  background:#2196f3;
+  color:white;
+}
+
+.viewer{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.9);
+  display:none;
+  justify-content:center;
+  align-items:center;
+  padding:20px;
+}
+
+.viewer img{
+  max-width:100%;
+  max-height:100%;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <input id="search" placeholder="Cari foto...">
+  <button class="add-btn" onclick="openModal()">+</button>
+</div>
+
+<div id="gallery" class="gallery"></div>
+
+<!-- Modal Tambah -->
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h2>Tambah Foto</h2>
+
+    <input id="titleInput" placeholder="Judul Foto">
+
+    <input type="file" id="photoInput" accept="image/*">
+
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeModal()">CANCEL</button>
+      <button class="ok" onclick="savePhoto()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Viewer -->
+<div class="viewer" id="viewer" onclick="closeViewer()">
+  <img id="viewerImg">
+</div>
+
+<script>
+let db;
+
+const request = indexedDB.open("PhotoGalleryDB", 1);
+
+request.onupgradeneeded = function(e){
+  db = e.target.result;
+
+  if(!db.objectStoreNames.contains("photos")){
+    db.createObjectStore("photos", {
+      keyPath: "id",
+      autoIncrement: true
+    });
+  }
+};
+
+request.onsuccess = function(e){
+  db = e.target.result;
+  loadPhotos();
+};
+
+function openModal(){
+  document.getElementById("modal").style.display = "flex";
+}
+
+function closeModal(){
+  document.getElementById("modal").style.display = "none";
+}
+
+function savePhoto(){
+  const title = document.getElementById("titleInput").value.trim();
+  const file = document.getElementById("photoInput").files[0];
+
+  if(!title || !file){
+    alert("Lengkapi judul dan foto.");
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = function(e){
+
+    const tx = db.transaction("photos","readwrite");
+    const store = tx.objectStore("photos");
+
+    store.add({
+      title:title,
+      image:e.target.result
+    });
+
+    tx.oncomplete = function(){
+      document.getElementById("titleInput").value = "";
+      document.getElementById("photoInput").value = "";
+      closeModal();
+      loadPhotos();
+    };
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function loadPhotos(){
+
+  const gallery = document.getElementById("gallery");
+  const keyword = document
+    .getElementById("search")
+    .value
+    .toLowerCase();
+
+  gallery.innerHTML = "";
+
+  const tx = db.transaction("photos","readonly");
+  const store = tx.objectStore("photos");
+
+  store.getAll().onsuccess = function(e){
+
+    const data = e.target.result.reverse();
+
+    data.forEach(item=>{
+
+      if(
+        !item.title
+        .toLowerCase()
+        .includes(keyword)
+      ) return;
+
+      const card = document.createElement("div");
+      card.className = "card";
+
+      card.innerHTML = `
+        <img src="${item.image}"
+             onclick="viewImage('${item.image}')">
+
+        <div class="card-title">
+          ${item.title}
+        </div>
+
+        <button class="delete-btn"
+          onclick="deletePhoto(${item.id})">
+          Hapus
+        </button>
+      `;
+
+      gallery.appendChild(card);
+    });
+  };
+}
+
+function deletePhoto(id){
+
+  if(!confirm("Hapus foto ini?")) return;
+
+  const tx = db.transaction("photos","readwrite");
+  const store = tx.objectStore("photos");
+
+  store.delete(id);
+
+  tx.oncomplete = loadPhotos;
+}
+
+function viewImage(src){
+  document.getElementById("viewerImg").src = src;
+  document.getElementById("viewer").style.display = "flex";
+}
+
+function closeViewer(){
+  document.getElementById("viewer").style.display = "none";
+}
+
+document
+.getElementById("search")
+.addEventListener("input", loadPhotos);
+</script>
+
+</body>
+</html>
