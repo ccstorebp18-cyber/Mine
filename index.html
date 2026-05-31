@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Galeri Foto</title>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- Tesseract dimuat lazy (hanya saat dipakai) -->
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:Arial}
@@ -39,7 +39,8 @@ body{background:#f4f4f4;padding:15px}
   border:none;
   background:white;
   cursor:pointer;
-  width:120px;
+  width:130px;
+  text-align:left;
 }
 .menu-box button:hover{background:#eee}
 
@@ -95,7 +96,9 @@ body{background:#f4f4f4;padding:15px}
 }
 
 /* EDIT */
-.card-actions{display:flex}
+.card-actions{display:none;} /* hidden by default, shown via editMode class */
+.edit-mode .card-actions{display:flex;}
+
 .card-actions button{
   flex:1;
   border:none;
@@ -152,7 +155,7 @@ body{background:#f4f4f4;padding:15px}
 
     <div class="menu-box" id="menuBox">
       <button onclick="openModal()">+ Tambah</button>
-      <button onclick="toggleEdit()">Edit Mode</button>
+      <button id="editBtn" onclick="toggleEdit()">Edit Mode</button>
     </div>
   </div>
 </div>
@@ -165,7 +168,7 @@ body{background:#f4f4f4;padding:15px}
     <h3>Tambah Foto (maks 20)</h3>
     <input type="file" id="photoInput" accept="image/*" multiple>
 
-    <div style="display:flex;gap:10px;justify-content:flex-end">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
       <button onclick="closeModal()">Cancel</button>
       <button onclick="savePhotos()">OK</button>
     </div>
@@ -180,77 +183,93 @@ body{background:#f4f4f4;padding:15px}
 <script>
 let db;
 let editMode = false;
-let allData = [];   // 🔥 cache data (NO RELOAD FULL)
+let allData = [];
+let tesseractLoaded = false;
+let searchDebounce = null;
 
-const request = indexedDB.open("PhotoGalleryDB",1);
+const request = indexedDB.open("PhotoGalleryDB", 1);
 
-request.onupgradeneeded = e=>{
+request.onupgradeneeded = e => {
   db = e.target.result;
-  if(!db.objectStoreNames.contains("photos")){
-    db.createObjectStore("photos",{keyPath:"id",autoIncrement:true});
+  if (!db.objectStoreNames.contains("photos")) {
+    db.createObjectStore("photos", { keyPath: "id", autoIncrement: true });
   }
 };
 
-request.onsuccess = e=>{
+request.onsuccess = e => {
   db = e.target.result;
   loadAllData();
 };
 
-/* MENU */
-function toggleMenu(){
-  const m = document.getElementById("menuBox");
-  m.style.display = m.style.display==="flex"?"none":"flex";
-  m.style.flexDirection="column";
+/* LAZY LOAD TESSERACT - hanya saat dipakai */
+function loadTesseract() {
+  return new Promise((resolve) => {
+    if (tesseractLoaded) return resolve();
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => { tesseractLoaded = true; resolve(); };
+    document.head.appendChild(script);
+  });
 }
 
-/* EDIT MODE */
-function toggleEdit(){
+/* MENU */
+function toggleMenu() {
+  const m = document.getElementById("menuBox");
+  m.style.display = m.style.display === "flex" ? "none" : "flex";
+  m.style.flexDirection = "column";
+}
+
+/* EDIT MODE - toggle class di gallery, tanpa re-render */
+function toggleEdit() {
   editMode = !editMode;
-  alert("Edit Mode: " + (editMode ? "ON" : "OFF"));
-  render(allData);
+  const gallery = document.getElementById("gallery");
+  const btn = document.getElementById("editBtn");
+
+  if (editMode) {
+    gallery.classList.add("edit-mode");
+    btn.textContent = "Edit Mode •";
+  } else {
+    gallery.classList.remove("edit-mode");
+    btn.textContent = "Edit Mode";
+  }
+
+  // tutup menu setelah toggle
+  document.getElementById("menuBox").style.display = "none";
 }
 
 /* MODAL */
-function openModal(){document.getElementById("modal").style.display="flex";}
-function closeModal(){document.getElementById("modal").style.display="none";}
+function openModal() { document.getElementById("modal").style.display = "flex"; }
+function closeModal() { document.getElementById("modal").style.display = "none"; }
 
 /* OCR */
-async function extractTitle(file){
-  const result = await Tesseract.recognize(file,'eng');
-
+async function extractTitle(file) {
+  await loadTesseract();
+  const result = await Tesseract.recognize(file, 'eng');
   let text = result.data.text
-    .replace(/\n/g,' ')
-    .replace(/[^a-zA-Z0-9\s]/g,'')
-    .replace(/\s+/g,' ')
+    .replace(/\n/g, ' ')
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
-
-  return text.split(' ').slice(0,6).join(' ') || "Tanpa Judul";
+  return text.split(' ').slice(0, 6).join(' ') || "Tanpa Judul";
 }
 
 /* SAVE */
-async function savePhotos(){
+async function savePhotos() {
   const files = [...document.getElementById("photoInput").files];
-  if(files.length===0) return;
-  if(files.length>20) return alert("Maks 20");
+  if (files.length === 0) return;
+  if (files.length > 20) return alert("Maks 20");
 
-  for(const file of files){
-
+  for (const file of files) {
     const title = await extractTitle(file);
-
     const reader = new FileReader();
-    reader.onload = e=>{
-      const tx = db.transaction("photos","readwrite");
-      const obj = {
-        title,
-        image:e.target.result
-      };
-
+    reader.onload = e => {
+      const tx = db.transaction("photos", "readwrite");
+      const obj = { title, image: e.target.result };
       const req = tx.objectStore("photos").add(obj);
-
-      req.onsuccess = ()=>{
+      req.onsuccess = () => {
         obj.id = req.result;
         allData.unshift(obj);
-        renderItem(obj, true); // 🔥 tambah tanpa reload
+        renderItem(obj, true);
       };
     };
     reader.readAsDataURL(file);
@@ -260,99 +279,100 @@ async function savePhotos(){
 }
 
 /* LOAD ONCE */
-function loadAllData(){
-  const tx = db.transaction("photos","readonly");
-  tx.objectStore("photos").getAll().onsuccess = e=>{
+function loadAllData() {
+  const tx = db.transaction("photos", "readonly");
+  tx.objectStore("photos").getAll().onsuccess = e => {
     allData = e.target.result.reverse();
     render(allData);
   };
 }
 
-/* REAL TIME SEARCH (NO RELOAD GRID) */
-document.getElementById("search").addEventListener("input", e=>{
-  const keyword = e.target.value.toLowerCase();
-
-  document.querySelectorAll(".card").forEach(card=>{
-    const title = card.getAttribute("data-title").toLowerCase();
-    card.style.display = title.includes(keyword) ? "block" : "none";
-  });
+/* SEARCH - debounced, toggle visibility tanpa re-render */
+document.getElementById("search").addEventListener("input", e => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    const keyword = e.target.value.toLowerCase();
+    document.querySelectorAll(".card").forEach(card => {
+      const title = card.getAttribute("data-title").toLowerCase();
+      card.style.display = title.includes(keyword) ? "" : "none";
+    });
+  }, 120);
 });
 
 /* RENDER ALL */
-function render(data){
+function render(data) {
   const gallery = document.getElementById("gallery");
-  gallery.innerHTML="";
-  data.forEach(item=>renderItem(item,false));
+  gallery.innerHTML = "";
+  data.forEach(item => renderItem(item, false));
 }
 
 /* RENDER SINGLE ITEM */
-function renderItem(item, prepend){
+function renderItem(item, prepend) {
   const gallery = document.getElementById("gallery");
 
   const card = document.createElement("div");
-  card.className="card";
+  card.className = "card";
   card.setAttribute("data-id", item.id);
   card.setAttribute("data-title", item.title);
 
-  card.innerHTML=`
+  card.innerHTML = `
     <div class="card-title">${item.title}</div>
-    <img src="${item.image}" onclick="viewImage('${item.image}')">
-
-    ${editMode ? `
+    <img src="${item.image}" onclick="viewImage('${item.id}')">
     <div class="card-actions">
       <button class="edit-btn" onclick="editTitle(${item.id})">Edit</button>
       <button class="delete-btn" onclick="deletePhoto(${item.id})">Hapus</button>
     </div>
-    ` : ""}
   `;
 
-  if(prepend) gallery.prepend(card);
+  if (prepend) gallery.prepend(card);
   else gallery.appendChild(card);
 }
 
-/* EDIT (NO FULL RELOAD) */
-function editTitle(id){
+/* EDIT TITLE */
+function editTitle(id) {
   const newTitle = prompt("Judul baru:");
-  if(!newTitle) return;
+  if (!newTitle) return;
 
-  const tx = db.transaction("photos","readwrite");
+  const tx = db.transaction("photos", "readwrite");
   const store = tx.objectStore("photos");
-
   const req = store.get(id);
 
-  req.onsuccess = e=>{
+  req.onsuccess = e => {
     const data = e.target.result;
     data.title = newTitle;
     store.put(data);
 
-    // update UI langsung
     const card = document.querySelector(`[data-id="${id}"]`);
-    if(card){
+    if (card) {
       card.setAttribute("data-title", newTitle);
       card.querySelector(".card-title").innerText = newTitle;
     }
   };
 }
 
-/* DELETE (NO FULL RELOAD) */
-function deletePhoto(id){
-  if(!confirm("Hapus foto?")) return;
+/* DELETE */
+function deletePhoto(id) {
+  if (!confirm("Hapus foto?")) return;
 
-  const tx = db.transaction("photos","readwrite");
+  const tx = db.transaction("photos", "readwrite");
   tx.objectStore("photos").delete(id);
 
-  tx.oncomplete = ()=>{
+  tx.oncomplete = () => {
     document.querySelector(`[data-id="${id}"]`)?.remove();
+    allData = allData.filter(item => item.id !== id);
   };
 }
 
 /* VIEW */
-function viewImage(src){
-  document.getElementById("viewerImg").src = src;
-  document.getElementById("viewer").style.display="flex";
+const imageCache = {};
+function viewImage(id) {
+  const item = allData.find(i => i.id == id);
+  if (!item) return;
+  document.getElementById("viewerImg").src = item.image;
+  document.getElementById("viewer").style.display = "flex";
 }
-function closeViewer(){
-  document.getElementById("viewer").style.display="none";
+function closeViewer() {
+  document.getElementById("viewer").style.display = "none";
 }
 </script>
 
