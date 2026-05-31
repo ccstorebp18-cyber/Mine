@@ -18,7 +18,7 @@ body{background:#f4f4f4;padding:15px}
 /* MENU */
 .menu-wrap{
   position:relative;
-  z-index:9999; /* FIX utama biar di atas card */
+  z-index:99999;
 }
 
 .menu-btn{
@@ -26,24 +26,20 @@ body{background:#f4f4f4;padding:15px}
   border:none;border-radius:10px;
   background:#333;color:#fff;
   font-size:20px;cursor:pointer;
-
+  z-index:100000;
   position:relative;
-  z-index:10000;
 }
 
 .menu-box{
   position:absolute;
   top:55px;right:0;
-
   background:white;
   border-radius:10px;
   box-shadow:0 3px 10px rgba(0,0,0,.2);
-
   display:none;
   flex-direction:column;
   overflow:hidden;
-
-  z-index:10001; /* paling atas */
+  z-index:100001;
 }
 
 .menu-box button{
@@ -53,7 +49,6 @@ body{background:#f4f4f4;padding:15px}
   cursor:pointer;
   width:120px;
 }
-
 .menu-box button:hover{background:#eee}
 
 /* GALLERY */
@@ -63,6 +58,7 @@ body{background:#f4f4f4;padding:15px}
   gap:15px;
 }
 
+/* CARD */
 .card{
   background:white;
   border-radius:12px;
@@ -79,7 +75,7 @@ body{background:#f4f4f4;padding:15px}
   cursor:pointer;
 }
 
-/* TITLE OVERLAY 35% ATAS */
+/* TITLE */
 .card-title{
   position:absolute;
   top:0;
@@ -96,28 +92,26 @@ body{background:#f4f4f4;padding:15px}
   font-weight:bold;
 }
 
-/* EDIT AREA */
-.card-actions{
-  display:flex;
-}
-
+/* EDIT */
+.card-actions{display:flex}
 .card-actions button{
   flex:1;
   border:none;
   padding:8px;
   cursor:pointer;
 }
-
 .delete-btn{background:#e53935;color:white}
 .edit-btn{background:#ffb300}
 
 /* MODAL */
 .modal{
-  position:fixed;inset:0;
+  position:fixed;
+  inset:0;
   background:rgba(0,0,0,.6);
   display:none;
   justify-content:center;
   align-items:center;
+  z-index:100000;
 }
 
 .modal-box{
@@ -128,21 +122,22 @@ body{background:#f4f4f4;padding:15px}
   border-radius:12px;
 }
 
-.modal-box input{
-  width:100%;
-  padding:10px;
-  margin-bottom:10px;
-}
-
-/* VIEWER */
+/* VIEWER 🔥 FIX UTAMA */
 .viewer{
-  position:fixed;inset:0;
-  background:rgba(0,0,0,.9);
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.95);
   display:none;
   justify-content:center;
   align-items:center;
+  z-index:999999; /* INI YANG FIX FOTO KETUTUP */
 }
-.viewer img{max-width:100%;max-height:100%}
+
+.viewer img{
+  max-width:100%;
+  max-height:100%;
+  z-index:1000000;
+}
 </style>
 </head>
 
@@ -167,7 +162,6 @@ body{background:#f4f4f4;padding:15px}
 <div class="modal" id="modal">
   <div class="modal-box">
     <h3>Tambah Foto (maks 20)</h3>
-
     <input type="file" id="photoInput" accept="image/*" multiple>
 
     <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -207,7 +201,7 @@ function toggleMenu(){
   m.style.flexDirection="column";
 }
 
-/* EDIT MODE */
+/* EDIT */
 function toggleEdit(){
   editMode = !editMode;
   alert("Edit Mode: " + (editMode ? "ON" : "OFF"));
@@ -222,32 +216,35 @@ function closeModal(){
   document.getElementById("modal").style.display="none";
 }
 
-/* OCR TITLE */
+/* OCR FIX 🔥 */
 async function extractTitle(file){
   const result = await Tesseract.recognize(file,'eng');
-  return result.data.text.trim().split("\n")[0] || "Tanpa Judul";
+
+  let text = result.data.text
+    .replace(/\n/g,' ')
+    .replace(/[^a-zA-Z0-9\s]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+
+  let words = text.split(' ').filter(w=>w.length>0);
+
+  let title = words.slice(0,6).join(' ');
+
+  return title || "Tanpa Judul";
 }
 
-/* SAVE MULTI (MAX 20) */
+/* SAVE */
 async function savePhotos(){
   const files = [...document.getElementById("photoInput").files];
 
-  if(files.length===0){
-    alert("Pilih foto dulu");
-    return;
-  }
-
-  if(files.length>20){
-    alert("Maks 20 foto");
-    return;
-  }
+  if(files.length===0) return alert("Pilih foto dulu");
+  if(files.length>20) return alert("Maks 20 foto");
 
   for(const file of files){
 
     const title = await extractTitle(file);
 
     const reader = new FileReader();
-
     reader.onload = e=>{
       const tx = db.transaction("photos","readwrite");
       tx.objectStore("photos").add({
@@ -255,14 +252,13 @@ async function savePhotos(){
         image:e.target.result
       });
     };
-
     reader.readAsDataURL(file);
   }
 
   setTimeout(()=>{
     closeModal();
     loadPhotos();
-  },1500);
+  },1200);
 }
 
 /* LOAD */
@@ -287,7 +283,6 @@ function loadPhotos(){
 
       card.innerHTML=`
         <div class="card-title">${item.title}</div>
-
         <img src="${item.image}" onclick="viewImage('${item.image}')">
 
         ${editMode ? `
@@ -303,7 +298,7 @@ function loadPhotos(){
   };
 }
 
-/* EDIT TITLE */
+/* EDIT */
 function editTitle(id){
   const newTitle = prompt("Judul baru:");
   if(!newTitle) return;
@@ -329,13 +324,14 @@ function deletePhoto(id){
   tx.oncomplete = loadPhotos;
 }
 
-/* VIEW */
+/* VIEW FIXED */
 function viewImage(src){
-  document.getElementById("viewerImg").src=src;
-  document.getElementById("viewer").style.display="flex";
+  document.getElementById("viewerImg").src = src;
+  document.getElementById("viewer").style.display = "flex";
 }
+
 function closeViewer(){
-  document.getElementById("viewer").style.display="none";
+  document.getElementById("viewer").style.display = "none";
 }
 
 document.getElementById("search").addEventListener("input",loadPhotos);
