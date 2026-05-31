@@ -16,20 +16,13 @@ body{background:#f4f4f4;padding:15px}
 #search{flex:1;padding:12px;border:1px solid #ccc;border-radius:10px}
 
 /* MENU */
-.menu-wrap{
-  position:relative;
-  z-index:99999;
-}
-
+.menu-wrap{position:relative;z-index:99999}
 .menu-btn{
   width:50px;height:45px;
   border:none;border-radius:10px;
   background:#333;color:#fff;
   font-size:20px;cursor:pointer;
-  z-index:100000;
-  position:relative;
 }
-
 .menu-box{
   position:absolute;
   top:55px;right:0;
@@ -41,7 +34,6 @@ body{background:#f4f4f4;padding:15px}
   overflow:hidden;
   z-index:100001;
 }
-
 .menu-box button{
   padding:10px;
   border:none;
@@ -58,14 +50,24 @@ body{background:#f4f4f4;padding:15px}
   gap:15px;
 }
 
-/* CARD */
+/* CARD + FADE ANIMATION */
 .card{
   background:white;
   border-radius:12px;
   overflow:hidden;
   box-shadow:0 2px 8px rgba(0,0,0,.1);
   position:relative;
-  z-index:1;
+
+  opacity:0;
+  transform:translateY(10px);
+  animation:fadeIn .25s forwards;
+}
+
+@keyframes fadeIn{
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
 }
 
 .card img{
@@ -122,7 +124,7 @@ body{background:#f4f4f4;padding:15px}
   border-radius:12px;
 }
 
-/* VIEWER 🔥 FIX UTAMA */
+/* VIEWER */
 .viewer{
   position:fixed;
   inset:0;
@@ -130,13 +132,12 @@ body{background:#f4f4f4;padding:15px}
   display:none;
   justify-content:center;
   align-items:center;
-  z-index:999999; /* INI YANG FIX FOTO KETUTUP */
+  z-index:999999;
 }
 
 .viewer img{
   max-width:100%;
   max-height:100%;
-  z-index:1000000;
 }
 </style>
 </head>
@@ -179,6 +180,7 @@ body{background:#f4f4f4;padding:15px}
 <script>
 let db;
 let editMode = false;
+let allData = [];   // 🔥 cache data (NO RELOAD FULL)
 
 const request = indexedDB.open("PhotoGalleryDB",1);
 
@@ -191,7 +193,7 @@ request.onupgradeneeded = e=>{
 
 request.onsuccess = e=>{
   db = e.target.result;
-  loadPhotos();
+  loadAllData();
 };
 
 /* MENU */
@@ -201,22 +203,18 @@ function toggleMenu(){
   m.style.flexDirection="column";
 }
 
-/* EDIT */
+/* EDIT MODE */
 function toggleEdit(){
   editMode = !editMode;
   alert("Edit Mode: " + (editMode ? "ON" : "OFF"));
-  loadPhotos();
+  render(allData);
 }
 
 /* MODAL */
-function openModal(){
-  document.getElementById("modal").style.display="flex";
-}
-function closeModal(){
-  document.getElementById("modal").style.display="none";
-}
+function openModal(){document.getElementById("modal").style.display="flex";}
+function closeModal(){document.getElementById("modal").style.display="none";}
 
-/* OCR FIX 🔥 */
+/* OCR */
 async function extractTitle(file){
   const result = await Tesseract.recognize(file,'eng');
 
@@ -226,19 +224,14 @@ async function extractTitle(file){
     .replace(/\s+/g,' ')
     .trim();
 
-  let words = text.split(' ').filter(w=>w.length>0);
-
-  let title = words.slice(0,6).join(' ');
-
-  return title || "Tanpa Judul";
+  return text.split(' ').slice(0,6).join(' ') || "Tanpa Judul";
 }
 
 /* SAVE */
 async function savePhotos(){
   const files = [...document.getElementById("photoInput").files];
-
-  if(files.length===0) return alert("Pilih foto dulu");
-  if(files.length>20) return alert("Maks 20 foto");
+  if(files.length===0) return;
+  if(files.length>20) return alert("Maks 20");
 
   for(const file of files){
 
@@ -247,58 +240,77 @@ async function savePhotos(){
     const reader = new FileReader();
     reader.onload = e=>{
       const tx = db.transaction("photos","readwrite");
-      tx.objectStore("photos").add({
+      const obj = {
         title,
         image:e.target.result
-      });
+      };
+
+      const req = tx.objectStore("photos").add(obj);
+
+      req.onsuccess = ()=>{
+        obj.id = req.result;
+        allData.unshift(obj);
+        renderItem(obj, true); // 🔥 tambah tanpa reload
+      };
     };
     reader.readAsDataURL(file);
   }
 
-  setTimeout(()=>{
-    closeModal();
-    loadPhotos();
-  },1200);
+  closeModal();
 }
 
-/* LOAD */
-function loadPhotos(){
-  const gallery = document.getElementById("gallery");
-  const keyword = document.getElementById("search").value.toLowerCase();
-
-  gallery.innerHTML="";
-
+/* LOAD ONCE */
+function loadAllData(){
   const tx = db.transaction("photos","readonly");
-  const store = tx.objectStore("photos");
-
-  store.getAll().onsuccess = e=>{
-    const data = e.target.result.reverse();
-
-    data.forEach(item=>{
-
-      if(!item.title.toLowerCase().includes(keyword)) return;
-
-      const card = document.createElement("div");
-      card.className="card";
-
-      card.innerHTML=`
-        <div class="card-title">${item.title}</div>
-        <img src="${item.image}" onclick="viewImage('${item.image}')">
-
-        ${editMode ? `
-        <div class="card-actions">
-          <button class="edit-btn" onclick="editTitle(${item.id})">Edit</button>
-          <button class="delete-btn" onclick="deletePhoto(${item.id})">Hapus</button>
-        </div>
-        ` : ""}
-      `;
-
-      gallery.appendChild(card);
-    });
+  tx.objectStore("photos").getAll().onsuccess = e=>{
+    allData = e.target.result.reverse();
+    render(allData);
   };
 }
 
-/* EDIT */
+/* REAL TIME SEARCH (NO RELOAD GRID) */
+document.getElementById("search").addEventListener("input", e=>{
+  const keyword = e.target.value.toLowerCase();
+
+  document.querySelectorAll(".card").forEach(card=>{
+    const title = card.getAttribute("data-title").toLowerCase();
+    card.style.display = title.includes(keyword) ? "block" : "none";
+  });
+});
+
+/* RENDER ALL */
+function render(data){
+  const gallery = document.getElementById("gallery");
+  gallery.innerHTML="";
+  data.forEach(item=>renderItem(item,false));
+}
+
+/* RENDER SINGLE ITEM */
+function renderItem(item, prepend){
+  const gallery = document.getElementById("gallery");
+
+  const card = document.createElement("div");
+  card.className="card";
+  card.setAttribute("data-id", item.id);
+  card.setAttribute("data-title", item.title);
+
+  card.innerHTML=`
+    <div class="card-title">${item.title}</div>
+    <img src="${item.image}" onclick="viewImage('${item.image}')">
+
+    ${editMode ? `
+    <div class="card-actions">
+      <button class="edit-btn" onclick="editTitle(${item.id})">Edit</button>
+      <button class="delete-btn" onclick="deletePhoto(${item.id})">Hapus</button>
+    </div>
+    ` : ""}
+  `;
+
+  if(prepend) gallery.prepend(card);
+  else gallery.appendChild(card);
+}
+
+/* EDIT (NO FULL RELOAD) */
 function editTitle(id){
   const newTitle = prompt("Judul baru:");
   if(!newTitle) return;
@@ -312,29 +324,36 @@ function editTitle(id){
     const data = e.target.result;
     data.title = newTitle;
     store.put(data);
-    loadPhotos();
+
+    // update UI langsung
+    const card = document.querySelector(`[data-id="${id}"]`);
+    if(card){
+      card.setAttribute("data-title", newTitle);
+      card.querySelector(".card-title").innerText = newTitle;
+    }
   };
 }
 
-/* DELETE */
+/* DELETE (NO FULL RELOAD) */
 function deletePhoto(id){
   if(!confirm("Hapus foto?")) return;
+
   const tx = db.transaction("photos","readwrite");
   tx.objectStore("photos").delete(id);
-  tx.oncomplete = loadPhotos;
+
+  tx.oncomplete = ()=>{
+    document.querySelector(`[data-id="${id}"]`)?.remove();
+  };
 }
 
-/* VIEW FIXED */
+/* VIEW */
 function viewImage(src){
   document.getElementById("viewerImg").src = src;
-  document.getElementById("viewer").style.display = "flex";
+  document.getElementById("viewer").style.display="flex";
 }
-
 function closeViewer(){
-  document.getElementById("viewer").style.display = "none";
+  document.getElementById("viewer").style.display="none";
 }
-
-document.getElementById("search").addEventListener("input",loadPhotos);
 </script>
 
 </body>
