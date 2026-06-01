@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Galeri Foto</title>
 
-<!-- Tesseract dimuat lazy (hanya saat dipakai) -->
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:Arial}
 body{background:#f4f4f4;padding:15px}
@@ -51,24 +49,20 @@ body{background:#f4f4f4;padding:15px}
   gap:15px;
 }
 
-/* CARD + FADE ANIMATION */
+/* CARD */
 .card{
   background:white;
   border-radius:12px;
   overflow:hidden;
   box-shadow:0 2px 8px rgba(0,0,0,.1);
   position:relative;
-
   opacity:0;
   transform:translateY(10px);
   animation:fadeIn .25s forwards;
 }
 
 @keyframes fadeIn{
-  to{
-    opacity:1;
-    transform:translateY(0);
-  }
+  to{ opacity:1; transform:translateY(0); }
 }
 
 .card img{
@@ -81,8 +75,7 @@ body{background:#f4f4f4;padding:15px}
 /* TITLE */
 .card-title{
   position:absolute;
-  top:0;
-  left:0;
+  top:0; left:0;
   width:100%;
   height:35%;
   background:rgba(0,0,0,.5);
@@ -95,53 +88,61 @@ body{background:#f4f4f4;padding:15px}
   font-weight:bold;
 }
 
-/* EDIT */
-.card-actions{display:none;} /* hidden by default, shown via editMode class */
+/* EDIT ACTIONS */
+.card-actions{display:none;}
 .edit-mode .card-actions{display:flex;}
-
 .card-actions button{
-  flex:1;
-  border:none;
-  padding:8px;
-  cursor:pointer;
+  flex:1; border:none; padding:8px; cursor:pointer;
 }
 .delete-btn{background:#e53935;color:white}
 .edit-btn{background:#ffb300}
 
 /* MODAL */
 .modal{
-  position:fixed;
-  inset:0;
+  position:fixed;inset:0;
   background:rgba(0,0,0,.6);
   display:none;
   justify-content:center;
   align-items:center;
   z-index:100000;
 }
-
 .modal-box{
   background:white;
   padding:20px;
   width:90%;
   max-width:400px;
   border-radius:12px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
 }
+.modal-box h3{font-size:16px;}
+.modal-box input[type="text"]{
+  padding:10px;
+  border:1px solid #ccc;
+  border-radius:8px;
+  font-size:14px;
+  width:100%;
+}
+.modal-box input[type="file"]{font-size:14px;}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;}
+.modal-actions button{
+  padding:8px 16px;
+  border:none;border-radius:8px;cursor:pointer;font-size:14px;
+}
+.btn-cancel{background:#eee;}
+.btn-ok{background:#333;color:white;}
 
 /* VIEWER */
 .viewer{
-  position:fixed;
-  inset:0;
+  position:fixed;inset:0;
   background:rgba(0,0,0,.95);
   display:none;
   justify-content:center;
   align-items:center;
   z-index:999999;
 }
-
-.viewer img{
-  max-width:100%;
-  max-height:100%;
-}
+.viewer img{max-width:100%;max-height:100%;}
 </style>
 </head>
 
@@ -149,10 +150,8 @@ body{background:#f4f4f4;padding:15px}
 
 <div class="topbar">
   <input id="search" placeholder="Cari foto...">
-
   <div class="menu-wrap">
     <button class="menu-btn" onclick="toggleMenu()">☰</button>
-
     <div class="menu-box" id="menuBox">
       <button onclick="openModal()">+ Tambah</button>
       <button id="editBtn" onclick="toggleEdit()">Edit Mode</button>
@@ -162,15 +161,15 @@ body{background:#f4f4f4;padding:15px}
 
 <div id="gallery" class="gallery"></div>
 
-<!-- MODAL -->
+<!-- MODAL TAMBAH -->
 <div class="modal" id="modal">
   <div class="modal-box">
-    <h3>Tambah Foto (maks 20)</h3>
+    <h3>Tambah Foto</h3>
+    <input type="text" id="titleInput" placeholder="Judul foto...">
     <input type="file" id="photoInput" accept="image/*" multiple>
-
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
-      <button onclick="closeModal()">Cancel</button>
-      <button onclick="savePhotos()">OK</button>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Batal</button>
+      <button class="btn-ok" onclick="savePhotos()">Simpan</button>
     </div>
   </div>
 </div>
@@ -184,7 +183,6 @@ body{background:#f4f4f4;padding:15px}
 let db;
 let editMode = false;
 let allData = [];
-let tesseractLoaded = false;
 let searchDebounce = null;
 
 const request = indexedDB.open("PhotoGalleryDB", 1);
@@ -201,17 +199,6 @@ request.onsuccess = e => {
   loadAllData();
 };
 
-/* LAZY LOAD TESSERACT - hanya saat dipakai */
-function loadTesseract() {
-  return new Promise((resolve) => {
-    if (tesseractLoaded) return resolve();
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    script.onload = () => { tesseractLoaded = true; resolve(); };
-    document.head.appendChild(script);
-  });
-}
-
 /* MENU */
 function toggleMenu() {
   const m = document.getElementById("menuBox");
@@ -219,48 +206,40 @@ function toggleMenu() {
   m.style.flexDirection = "column";
 }
 
-/* EDIT MODE - toggle class di gallery, tanpa re-render */
+/* EDIT MODE */
 function toggleEdit() {
   editMode = !editMode;
   const gallery = document.getElementById("gallery");
   const btn = document.getElementById("editBtn");
-
-  if (editMode) {
-    gallery.classList.add("edit-mode");
-    btn.textContent = "Edit Mode •";
-  } else {
-    gallery.classList.remove("edit-mode");
-    btn.textContent = "Edit Mode";
-  }
-
-  // tutup menu setelah toggle
+  gallery.classList.toggle("edit-mode", editMode);
+  btn.textContent = editMode ? "Edit Mode •" : "Edit Mode";
   document.getElementById("menuBox").style.display = "none";
 }
 
 /* MODAL */
-function openModal() { document.getElementById("modal").style.display = "flex"; }
-function closeModal() { document.getElementById("modal").style.display = "none"; }
-
-/* OCR */
-async function extractTitle(file) {
-  await loadTesseract();
-  const result = await Tesseract.recognize(file, 'eng');
-  let text = result.data.text
-    .replace(/\n/g, ' ')
-    .replace(/[^a-zA-Z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return text.split(' ').slice(0, 6).join(' ') || "Tanpa Judul";
+function openModal() {
+  document.getElementById("titleInput").value = "";
+  document.getElementById("photoInput").value = "";
+  document.getElementById("modal").style.display = "flex";
+}
+function closeModal() {
+  document.getElementById("modal").style.display = "none";
 }
 
-/* SAVE */
-async function savePhotos() {
+/* SAVE - tanpa OCR */
+function savePhotos() {
   const files = [...document.getElementById("photoInput").files];
-  if (files.length === 0) return;
-  if (files.length > 20) return alert("Maks 20");
+  const titleRaw = document.getElementById("titleInput").value.trim();
 
-  for (const file of files) {
-    const title = await extractTitle(file);
+  if (files.length === 0) return alert("Pilih foto dulu.");
+  if (files.length > 20) return alert("Maks 20 foto.");
+
+  files.forEach((file, idx) => {
+    // Kalau banyak foto, judul dikasih nomor urut otomatis
+    const title = files.length === 1
+      ? (titleRaw || "Tanpa Judul")
+      : (titleRaw ? `${titleRaw} ${idx + 1}` : `Foto ${idx + 1}`);
+
     const reader = new FileReader();
     reader.onload = e => {
       const tx = db.transaction("photos", "readwrite");
@@ -273,7 +252,7 @@ async function savePhotos() {
       };
     };
     reader.readAsDataURL(file);
-  }
+  });
 
   closeModal();
 }
@@ -287,7 +266,7 @@ function loadAllData() {
   };
 }
 
-/* SEARCH - debounced, toggle visibility tanpa re-render */
+/* SEARCH - debounced */
 document.getElementById("search").addEventListener("input", e => {
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
@@ -309,7 +288,6 @@ function render(data) {
 /* RENDER SINGLE ITEM */
 function renderItem(item, prepend) {
   const gallery = document.getElementById("gallery");
-
   const card = document.createElement("div");
   card.className = "card";
   card.setAttribute("data-id", item.id);
@@ -317,7 +295,7 @@ function renderItem(item, prepend) {
 
   card.innerHTML = `
     <div class="card-title">${item.title}</div>
-    <img src="${item.image}" onclick="viewImage('${item.id}')">
+    <img src="${item.image}" onclick="viewImage(${item.id})">
     <div class="card-actions">
       <button class="edit-btn" onclick="editTitle(${item.id})">Edit</button>
       <button class="delete-btn" onclick="deletePhoto(${item.id})">Hapus</button>
@@ -335,13 +313,10 @@ function editTitle(id) {
 
   const tx = db.transaction("photos", "readwrite");
   const store = tx.objectStore("photos");
-  const req = store.get(id);
-
-  req.onsuccess = e => {
+  store.get(id).onsuccess = e => {
     const data = e.target.result;
     data.title = newTitle;
     store.put(data);
-
     const card = document.querySelector(`[data-id="${id}"]`);
     if (card) {
       card.setAttribute("data-title", newTitle);
@@ -353,10 +328,8 @@ function editTitle(id) {
 /* DELETE */
 function deletePhoto(id) {
   if (!confirm("Hapus foto?")) return;
-
   const tx = db.transaction("photos", "readwrite");
   tx.objectStore("photos").delete(id);
-
   tx.oncomplete = () => {
     document.querySelector(`[data-id="${id}"]`)?.remove();
     allData = allData.filter(item => item.id !== id);
@@ -364,7 +337,6 @@ function deletePhoto(id) {
 }
 
 /* VIEW */
-const imageCache = {};
 function viewImage(id) {
   const item = allData.find(i => i.id == id);
   if (!item) return;
